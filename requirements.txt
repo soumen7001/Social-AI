@@ -1,0 +1,11 @@
+flask>=3.0
+flask-cors>=4.0
+firebase-admin>=6.0
+google-generativeai>=0.5
+pillow>=10.0
+numpy>=1.24
+transformers>=4.36
+torch>=2.1
+huggingface_hub>=0.20
+requests>=2.31
+python-dotenv>=1.0
