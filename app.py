@@ -18,6 +18,7 @@ import re
 import json
 import requests
 from dotenv import load_dotenv
+import mimetypes
 
 load_dotenv()
 
@@ -46,6 +47,9 @@ POE_META_KEY = os.getenv('POE_META_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 HF_TOKEN = os.getenv('HF_TOKEN')
+
+poe_ready = POE_API_KEY is not None
+meta_ready = POE_META_KEY is not None
 
 try:
     from huggingface_hub import InferenceClient
@@ -116,7 +120,7 @@ def _call_poe_vision(prompt, image_data, mime):
 def _call_poe_meta(prompt):
     return _call_poe(prompt, bot_name="claude_3_haiku")
 
-def _call_gemini(prompt, image_data=None):
+def _call_gemini(prompt, image_data=None, mime="image/jpeg"):
     """Uses gemini models with local fallback"""
     # Skip external APIs if no image - use local-only for speed and reliability
     if not image_data:
@@ -133,13 +137,13 @@ def _call_gemini(prompt, image_data=None):
     if not gemini_ready:
         return None
         
-    models_to_try = ['gemini-1.5-flash-8b', 'gemini-2.0-flash-lite', 'gemini-1.5-pro']
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp']
     last_err = None
 
     for model_name in models_to_try:
         try:
             if image_data:
-                img = genai.types.Part.from_bytes(data=base64.b64decode(image_data), mime_type="image/jpeg")
+                img = genai.types.Part.from_bytes(data=base64.b64decode(image_data), mime_type=mime)
                 response = gemini_client.models.generate_content(
                     model=model_name,
                     contents=[prompt, img]
@@ -205,6 +209,7 @@ def analyze_image():
     
     raw_bytes = file.read()
     img_data = base64.b64encode(raw_bytes).decode("utf-8")
+    mime = mimetypes.guess_type(file.filename)[0] or "image/jpeg"
 
     # 1. Run Local CNN Analysis (The Primary Step)
     print("[LOG] Step 1: Running Local CNN...")
@@ -220,11 +225,13 @@ def analyze_image():
     
     vision_prompt = f"""
     This image has been scanned and detected to contain: {labels_str}.
-    Please provide a detailed analysis:
-    1. A JSON array of specific objects: [{{"label": "object", "probability": 0.99}}, ...]
-    2. A professional, viral Instagram description (1-2 sentences) matching these elements.
-    3. 15 viral, high-growth hashtags.
-    Return ONLY the JSON or structured text if JSON fails.
+    Please provide a detailed analysis in JSON format:
+    {{
+        "objects": [{{"label": "object", "probability": 0.99}}, ...],
+        "description": "A professional, viral Instagram description (1-2 sentences)",
+        "hashtags": ["hashtag1", "hashtag2", ...]
+    }}
+    Return ONLY valid JSON.
     """
     
     ai_predictions = []
@@ -235,7 +242,7 @@ def analyze_image():
     try:
         # Try Gemini Vision first
         print("[LOG] Step 2a: Calling Gemini Vision API...")
-        response = _call_gemini(vision_prompt, image_data=img_data)
+        response = _call_gemini(vision_prompt, image_data=img_data, mime=mime)
         
         # Skip if no response (all APIs failed)
         if not response:
@@ -247,26 +254,33 @@ def analyze_image():
         
         # Parse Response
         try:
-            start = response.find("[")
-            end = response.rfind("]") + 1
-            if start >= 0: ai_predictions = json.loads(response[start:end])
-        except: pass
-        
-        desc_match = re.search(r'description["\s:]+([^"\n]+)', response, re.IGNORECASE)
-        if desc_match: gemini_desc = desc_match.group(1).strip().strip('"')
+            data = json.loads(response)
+            ai_predictions = data.get("objects", [])
+            gemini_desc = data.get("description", "")
+            gemini_hashtags = " ".join(data.get("hashtags", []))
+        except json.JSONDecodeError:
+            # Fallback parsing
+            try:
+                start = response.find("[")
+                end = response.rfind("]") + 1
+                if start >= 0: ai_predictions = json.loads(response[start:end])
+            except: pass
+            
+            desc_match = re.search(r'description["\s:]+([^"\n]+)', response, re.IGNORECASE)
+            if desc_match: gemini_desc = desc_match.group(1).strip().strip('"')
 
-        # More robust parsing fallback
-        if not gemini_desc:
-            lines = [l.strip() for l in response.split('\n') if l.strip()]
-            for line in lines:
-                if not line.startswith('[') and not line.startswith('{') and '#' not in line and len(line) > 20:
-                    gemini_desc = line
-                    break
-        
-        # If still no hashtags, extract all # words
-        if not gemini_hashtags:
-            all_tags = re.findall(r'#\w+', response)
-            if all_tags: gemini_hashtags = " ".join(all_tags[:15])
+            # More robust parsing fallback
+            if not gemini_desc:
+                lines = [l.strip() for l in response.split('\n') if l.strip()]
+                for line in lines:
+                    if not line.startswith('[') and not line.startswith('{') and '#' not in line and len(line) > 20:
+                        gemini_desc = line
+                        break
+            
+            # If still no hashtags, extract all # words
+            if not gemini_hashtags:
+                all_tags = re.findall(r'#\w+', response)
+                if all_tags: gemini_hashtags = " ".join(all_tags[:15])
 
         if gemini_desc: engine_used = "CNN + Gemini Vision"
 
@@ -274,17 +288,26 @@ def analyze_image():
         print(f"[WARN] Gemini Vision failed, attempting Text-Only Fallback: {e}")
         # Fallback to Text-Only API (Cheaper/Simpler) using CNN results
         try:
-            text_prompt = f"Act as an Instagram expert. I have an image containing: {labels_str}. Write a catchy, viral caption and 15 hashtags. Format: Caption: [text] Hashtags: [text]"
+            text_prompt = f"Act as an Instagram expert. I have an image containing: {labels_str}. Provide a JSON response:\n{{\n    \"description\": \"Catchy, viral caption\",\n    \"hashtags\": [\"hashtag1\", \"hashtag2\", ...]\n}}"
             response = _call_gemini(text_prompt)
             
             if not response:
                 raise Exception("Empty response from text fallback")
             
-            # Simple parsing
-            if "Caption:" in response:
-                gemini_desc = response.split("Caption:")[1].split("Hashtags:")[0].strip()
-            if "Hashtags:" in response:
-                gemini_hashtags = response.split("Hashtags:")[1].strip()
+            try:
+                data = json.loads(response)
+                gemini_desc = data.get("description", "")
+                gemini_hashtags = " ".join(data.get("hashtags", []))
+            except json.JSONDecodeError:
+                # Simple parsing
+                if "description:" in response.lower():
+                    parts = response.lower().split("description:")
+                    if len(parts) > 1:
+                        gemini_desc = parts[1].split("hashtags:")[0].strip()
+                if "hashtags:" in response.lower():
+                    parts = response.lower().split("hashtags:")
+                    if len(parts) > 1:
+                        gemini_hashtags = parts[1].strip()
             
             engine_used = "CNN + Gemini Text Fallback"
         except Exception as e2:
