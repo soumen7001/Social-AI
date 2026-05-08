@@ -19,14 +19,15 @@ The following is a set of guidelines for contributing to SocialAI. These are mos
 1. **Fork the repo** and create your branch from `main`.
 2. **Install dependencies:** `pip install -r requirements.txt`.
 3. **Follow the code style:** We use standard Python (PEP 8) and clean JavaScript practices.
-4. **Test your changes:** Ensure the Flask server starts and the frontend interacts correctly with the backend.
+4. **Test your changes:** Ensure the Flask server starts and the frontend interacts correctly with the backend by running `python app.py`.
 5. **Update documentation:** If you added a new feature or changed an API, update the `README.md`.
 
 ## Development Setup
 
 1. Follow the installation steps in the [README.md](README.md).
-2. Set up your `.env` file with test API keys.
-3. Run the app in debug mode: `python app.py`.
+2. Copy `.env.example` to `.env` and set your API keys.
+3. Place your `firebase-adminsdk.json` in the project root and keep it private.
+4. Run the app in debug mode: `python app.py`.
 
 ## Style Guidelines
 

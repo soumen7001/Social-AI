@@ -42,8 +42,8 @@
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/yourusername/socialai.git
-   cd socialai
+   git clone https://github.com/soumen7001/Social-AI.git
+   cd Social-AI
    ```
 
 2. **Set Up Virtual Environment**
@@ -62,16 +62,22 @@
 
 4. **Environment Configuration**
    ```bash
+   # Windows
+   copy .env.example .env
+   # macOS/Linux
    cp .env.example .env
    ```
    Edit `.env` and provide your API keys:
    - `GEMINI_API_KEY`: Get from [Google AI Studio](https://aistudio.google.com/)
    - `HF_TOKEN`: Get from [Hugging Face Settings](https://huggingface.co/settings/tokens)
    - `POE_API_KEY`: (Optional) For fallback caption generation
+   
+   > Keep `.env` private and do not commit it to version control.
 
 5. **Firebase Setup**
    - Place your `firebase-adminsdk.json` in the project root.
    - Update `js/firebase-config.js` with your Firebase Web configuration.
+   - Keep `firebase-adminsdk.json` private and do not publish it publicly.
 
 ---
 
@@ -125,4 +131,4 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## ⚠️ Disclaimer
 
-This tool is for educational and personal use only. Ensure compliance with Instagram's [Terms of Service](https://help.instagram.com/581066165581870) and [Community Guidelines](https://help.instagram.com/477434105621119).
+This tool is for educational and personal use only. Ensure compliance with Instagram's [Terms of Service](https://help.instagram.com/581066165581870) and [Community Guidelines](https://help.instagram.com/477434105621119).
